@@ -30,8 +30,16 @@ El módulo se responsabiliza de:
 - **Estados de cuenta:** activa, desactivada, con email sin verificar,
   bloqueada temporalmente.
 
-Cada punto se especifica en su propio documento antes de implementarse. El
-primero es [login.md](login.md).
+Cada punto se especifica en su propio documento antes de implementarse.
+Especificados hasta ahora:
+
+| Spec | Funcionalidad |
+| --- | --- |
+| [registro.md](registro.md) | Alta de cuentas y verificación de email |
+| [login.md](login.md) | Autenticación, renovación y cierre de sesión |
+
+El orden de implementación empieza por el registro: `login.md` asume cuentas que
+ya existen, así que sin alta no hay nadie que pueda iniciar sesión.
 
 ## 3. Fuera de alcance
 
@@ -66,14 +74,24 @@ Lo siguiente **no** es responsabilidad de este módulo, aunque se relacione con
 
 ### Estados de una cuenta
 
-Los estados que manejan todas las funcionalidades del módulo:
+Los estados que manejan todas las funcionalidades del módulo. Son **estados
+conceptuales**, no valores de un único campo:
 
-| Estado | Significado | Cómo se sale |
-| --- | --- | --- |
-| `PENDING_VERIFICATION` | Registrada, email sin verificar. | Verificando el email. |
-| `ACTIVE` | Operativa. | — |
-| `LOCKED` | Bloqueo temporal por intentos fallidos. | Solo, al expirar la ventana. |
-| `DISABLED` | Desactivada por un administrador. | Solo un administrador la reactiva. |
+| Estado | Significado | Cómo se representa | Cómo se sale |
+| --- | --- | --- | --- |
+| Sin verificar | Registrada, email sin confirmar. | `emailVerified = false` | Verificando el email. |
+| Activa | Operativa. | `status = ACTIVE`, `emailVerified = true`, sin bloqueo vigente | — |
+| Bloqueada | Bloqueo temporal por intentos fallidos. | `lockedUntil` con un instante futuro | Sola, al expirar la ventana. |
+| Desactivada | Desactivada por un administrador. | `status = DISABLED` | Solo un administrador la reactiva. |
+
+**Los tres campos son independientes, y a propósito.** Un único enum no podría
+representar las combinaciones que ocurren de verdad: una cuenta puede estar sin
+verificar **y además** bloqueada por intentos fallidos, y un administrador puede
+desactivar una cuenta que ya estaba bloqueada. Además el bloqueo necesita el
+instante en que expira, que no cabe en un enum.
+
+Cada funcionalidad declara en qué orden comprueba estos estados; para el login
+está en [`login.md` §4.7](login.md).
 
 ## 5. Principios
 

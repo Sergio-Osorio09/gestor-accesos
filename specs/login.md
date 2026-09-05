@@ -15,16 +15,17 @@ sin esta funcionalidad ninguna otra puede identificar a quien la usa.
 | **API de autenticación (Spring WebFlux)** | Valida credenciales, aplica la política de bloqueo, emite y rota tokens. |
 | **Administrador** | No participa en el flujo de login. Aparece solo como el actor que deja una cuenta en estado `DISABLED`; su gestión queda fuera de alcance (bloque 5). |
 
-Estados de cuenta relevantes en esta funcionalidad:
+Los estados de cuenta y cómo se representan están definidos en
+[`overview.md`](overview.md#estados-de-una-cuenta), que es la fuente de verdad.
+Los que intervienen en esta funcionalidad:
 
 - `emailVerified`: `true` / `false`.
 - `status`: `ACTIVE` (operativa) o `DISABLED` (desactivada por un administrador).
 - `lockedUntil`: instante hasta el que la cuenta está bloqueada por intentos
   fallidos, o vacío si no lo está.
 
-> Estas definiciones son provisionales aquí. Cuando exista `overview.md`, los
-> actores y los estados de cuenta se suben a ese documento y esta sección pasa
-> a referenciarlo.
+Las cuentas las crea [`registro.md`](registro.md); esta spec asume que ya
+existen.
 
 ## 3. Escenarios
 
@@ -158,9 +159,13 @@ registrados.
 
 ### 4.6 Cuenta desactivada
 
-Una cuenta en estado `DISABLED` responde `403 ACCOUNT_DISABLED`, y solo después
-de validar la contraseña — igual que con el email sin verificar. La distinción
-entre `DISABLED` y `LOCKED` importa: el bloqueo caduca solo, la desactivación no.
+Una cuenta con `status = DISABLED` responde `403 ACCOUNT_DISABLED`, y solo
+después de validar la contraseña — igual que con el email sin verificar.
+
+La distinción entre desactivada y bloqueada importa, y por eso son campos
+distintos: el bloqueo vive en `lockedUntil` y **caduca solo**; la desactivación
+vive en `status` y solo la levanta un administrador. Una cuenta puede estar en
+los dos estados a la vez.
 
 ### 4.7 Orden de las comprobaciones
 
@@ -203,10 +208,11 @@ Nada de lo siguiente se implementa en esta funcionalidad. Si hace falta, se
 especifica aparte.
 
 - **Registro / alta de cuentas nuevas.** Esta spec asume usuarios que ya
-  existen en la base de datos.
+  existen en la base de datos. Especificado aparte en
+  [`registro.md`](registro.md).
 - **Verificación de email:** el envío y reenvío del correo, y el endpoint que
   consume el token de verificación. Aquí solo se **lee** el flag
-  `emailVerified`.
+  `emailVerified`. Especificado aparte en [`registro.md`](registro.md).
 - **Recuperación de contraseña** ("olvidé mi contraseña") y **cambio de
   contraseña** estando autenticado.
 - **Segundo factor (MFA):** TOTP, SMS y códigos de respaldo.

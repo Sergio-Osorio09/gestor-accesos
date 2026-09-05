@@ -94,6 +94,9 @@ la convención (parámetros, forma de la respuesta) antes de implementarlos.
 | POST | `/api/v1/auth/refresh` | Cookie refresh | Renueva el access token y rota el refresh token | `200` | [login.md](login.md) |
 | POST | `/api/v1/auth/logout` | Bearer | Revoca el refresh token y borra la cookie | `204` | [login.md](login.md) |
 | GET | `/api/v1/auth/me` | Bearer | Devuelve el usuario de la sesión actual | `200` | [login.md](login.md) |
+| POST | `/api/v1/auth/register` | Pública | Da de alta una cuenta y envía el correo de verificación | `202` | [registro.md](registro.md) |
+| POST | `/api/v1/auth/verify-email` | Pública | Consume el token de verificación y marca el email como verificado | `200` | [registro.md](registro.md) |
+| POST | `/api/v1/auth/resend-verification` | Pública | Reenvía el correo de verificación | `202` | [registro.md](registro.md) |
 
 ### 2.2 `POST /api/v1/auth/login`
 
@@ -168,6 +171,74 @@ sesión tras recargar la página.
 
 ---
 
+### 2.6 `POST /api/v1/auth/register`
+
+Da de alta una cuenta y encarga el envío del correo de verificación.
+
+**Petición**
+
+```json
+{
+  "email": "ada@example.com",
+  "password": "una frase larga y poco comun",
+  "displayName": "Ada Lovelace"
+}
+```
+
+| Campo | Tipo | Reglas |
+| --- | --- | --- |
+| `email` | string | Obligatorio. Formato válido, máx. 254 caracteres. Se normaliza a minúsculas y se recortan los espacios de los extremos. |
+| `password` | string | Obligatorio. Mínimo 12 caracteres y máximo 72 **bytes** UTF-8. Sin reglas de composición. No puede ser una contraseña común ni derivarse del email o del nombre. |
+| `displayName` | string | Obligatorio. Entre 2 y 100 caracteres. Se normaliza a NFC; se rechazan los caracteres de control. |
+
+**Respuesta `202 Accepted`**
+
+```json
+{
+  "message": "Si la dirección es válida, recibirás un correo para confirmar tu cuenta."
+}
+```
+
+> **La respuesta es idéntica exista o no la cuenta.** No se devuelve `409` ni
+> ningún otro código que revele que el email ya está registrado: sería una vía
+> de enumeración que echaría por tierra las defensas de `/auth/login`. Lo que
+> cambia es el correo que recibe el titular. Ver
+> [`registro.md` escenario 2](registro.md).
+
+**Errores:** `VALIDATION_ERROR` (400), `WEAK_PASSWORD` (400).
+
+### 2.7 `POST /api/v1/auth/verify-email`
+
+Consume el token de verificación que viaja en el enlace del correo.
+
+**Petición**
+
+```json
+{ "token": "<valor opaco de 256 bits>" }
+```
+
+**Respuesta `200 OK`** — el mismo objeto `user` que devuelve `/login`, ya con el
+email verificado.
+
+**Errores:** `VALIDATION_ERROR` (400), `VERIFICATION_TOKEN_INVALID` (410),
+`VERIFICATION_TOKEN_EXPIRED` (410).
+
+### 2.8 `POST /api/v1/auth/resend-verification`
+
+Reemite el correo de verificación e invalida el token anterior.
+
+**Petición**
+
+```json
+{ "email": "ada@example.com" }
+```
+
+**Respuesta `202 Accepted`** — mismo cuerpo genérico que `/auth/register`, y
+también **idéntico** tanto si la cuenta no existe como si ya está verificada.
+
+**Errores:** `VALIDATION_ERROR` (400), `RESEND_TOO_SOON` (429, añade
+`retryAfterSeconds`).
+
 ## 3. Catálogo de códigos de error
 
 | `code` | HTTP | Cuándo se devuelve |
@@ -179,6 +250,10 @@ sesión tras recargar la página.
 | `EMAIL_NOT_VERIFIED` | 403 | Credenciales correctas, pero la cuenta no ha verificado su email |
 | `ACCOUNT_DISABLED` | 403 | Cuenta desactivada por un administrador |
 | `ACCOUNT_LOCKED` | 423 | Bloqueo temporal por intentos fallidos. Añade `retryAfterSeconds` |
+| `WEAK_PASSWORD` | 400 | Contraseña más corta que el mínimo, demasiado común, de más de 72 bytes, o derivada del email o del nombre |
+| `VERIFICATION_TOKEN_INVALID` | 410 | Token de verificación inexistente, malformado o ya consumido |
+| `VERIFICATION_TOKEN_EXPIRED` | 410 | Token de verificación emitido hace más de 24 h |
+| `RESEND_TOO_SOON` | 429 | Reenvío pedido antes de que pase el cooldown de 60 s. Añade `retryAfterSeconds` |
 
 Los códigos son estables: uno publicado no se renombra ni cambia de significado
 sin subir la versión de la API.
@@ -187,5 +262,16 @@ sin subir la versión de la API.
 
 ## 4. Endpoints pendientes de especificar
 
-Ninguno todavía. Cada funcionalidad nueva añade sus filas a la tabla de la
-sección 2 y sus códigos a la sección 3, siempre después de aprobar su spec.
+De las funcionalidades que `overview.md` declara dentro del alcance, quedan sin
+contrato:
+
+| Funcionalidad | Endpoints previsibles |
+| --- | --- |
+| Recuperación de contraseña | `POST /auth/forgot-password`, `POST /auth/reset-password` |
+| Cambio de contraseña autenticado | `POST /auth/change-password` |
+| Roles y autorización | Por definir al especificar la funcionalidad |
+| Administración de cuentas | `POST /admin/users/{id}/disable`, `/enable`, `/unlock` |
+
+Son una previsión, no un compromiso: cada funcionalidad nueva añade sus filas a
+la tabla de la sección 2 y sus códigos a la sección 3 **después** de aprobar su
+spec, y las rutas pueden cambiar al escribirla.
