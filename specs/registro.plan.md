@@ -4,8 +4,9 @@ Resumen de **qué se implementaría y con qué stack** para cumplir
 [registro.md](registro.md) y [api-contract.md](api-contract.md). Cada decisión
 está cerrada: no hay nada por definir.
 
-Este documento describe la implementación; **no la ejecuta**. No se ha escrito
-código todavía.
+Este documento describe la implementación; **no la ejecuta**. De los diez pasos
+del apartado 6, los **pasos 8 y 9 (el frontend) ya están implementados** en
+`frontend/`; el backend, pasos 1 a 7, sigue sin escribirse.
 
 Se apoya en lo que ya define [login.plan.md](login.plan.md) — tabla `users`,
 BCrypt, migraciones Flyway, organización por funcionalidad — y solo detalla lo

@@ -187,7 +187,15 @@ yarn dev
 ```
 
 Abre <http://localhost:5173>. La página muestra el estado de la conexión con la
-API: en verde si el backend está levantado, en rojo si no.
+API: en verde si el backend está levantado, en rojo si no. Desde ahí se llega a
+`/register`, el formulario de alta.
+
+Los tests del frontend no necesitan el backend —simulan la API con MSW—:
+
+```bash
+cd frontend
+yarn test
+```
 
 El servidor de Vite hace de proxy de `/api` hacia `http://localhost:8080`, así
 que el navegador ve un único origen y no hay que configurar CORS en
@@ -195,20 +203,24 @@ desarrollo.
 
 ## Estado actual
 
-Esto es **andamiaje**: los dos proyectos arrancan y se comunican, pero todavía
-no hay lógica de negocio.
-
 - ✅ Specs escritas: visión, stack, contrato de API, arquitectura y dos
   funcionalidades (registro y login).
 - ✅ Frontend y backend arrancan y se comunican vía `/api/v1/status`.
-- ⬜ Registro y verificación de email: especificado en
-  [`specs/registro.md`](specs/registro.md) y planificado en
-  [`specs/registro.plan.md`](specs/registro.plan.md), **sin implementar**.
+- 🔶 Registro y verificación de email
+  ([`specs/registro.md`](specs/registro.md)): **el frontend está implementado**
+  —rutas `/register`, `/check-your-email` y `/verify-email`, con sus tests
+  contra MSW—; **el backend no**, así que el flujo todavía no se puede
+  completar de verdad.
 - ⬜ Login: especificado en [`specs/login.md`](specs/login.md) y planificado en
   [`specs/login.plan.md`](specs/login.plan.md), **sin implementar**.
 
 El registro va primero: `login.md` asume cuentas que ya existen, así que sin
 alta no hay nadie que pueda iniciar sesión.
+
+Lo siguiente son los pasos 1-7 de
+[`specs/registro.plan.md`](specs/registro.plan.md): migraciones, política de
+contraseñas, outbox de correo y los tres endpoints. Hacen falta **JDK 21** (no
+solo el JRE) y **Docker**, para Testcontainers y Mailpit.
 
 ## Documentación
 
