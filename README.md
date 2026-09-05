@@ -8,6 +8,78 @@ escribe y se aprueba antes que el código. Si el código se desvía de la spec, 
 corrige el código o se actualiza la spec de forma explícita — nunca a
 posteriori y en silencio.
 
+## Arquitectura
+
+Dos aplicaciones desplegadas por separado, comunicadas solo por HTTP siguiendo
+[`specs/api-contract.md`](specs/api-contract.md). No comparten código ni base de
+datos.
+
+```mermaid
+graph TB
+    subgraph navegador["🌐 Navegador"]
+        SPA["React SPA<br/>React 19 · TypeScript · Vite<br/>Access token en memoria"]
+        COOKIE[("Cookie httpOnly<br/>refresh_token<br/>JavaScript no puede leerla")]
+    end
+
+    subgraph servidor["☕ API — Spring Boot 4.1 + WebFlux · puerto 8080"]
+        SEC["SecurityWebFilterChain<br/>Valida la cabecera Bearer"]
+        CTRL["AuthController<br/>/api/v1/auth/*"]
+        UC["Casos de uso<br/>Login · Refresh · Logout"]
+        JWT["JwtTokenService<br/>Firma HS256 · 15 min"]
+        HASH["PasswordHasher<br/>BCrypt en boundedElastic"]
+        REPO["Repositorios R2DBC<br/>No bloqueantes"]
+    end
+
+    DB[("🐘 PostgreSQL 16<br/>users · user_roles<br/>refresh_tokens")]
+
+    SPA -->|"HTTP + JSON<br/>Authorization: Bearer"| SEC
+    COOKIE -.->|"El navegador la adjunta sola,<br/>solo en /api/v1/auth"| SEC
+    SEC --> CTRL
+    CTRL --> UC
+    UC --> JWT
+    UC --> HASH
+    UC --> REPO
+    REPO -->|"R2DBC reactivo"| DB
+    SPA -.->|"El navegador la guarda;<br/>el código nunca la toca"| COOKIE
+
+    classDef front fill:#61dafb,stroke:#1a7f9c,color:#000
+    classDef back fill:#6db33f,stroke:#3d6b21,color:#fff
+    classDef data fill:#336791,stroke:#1a3d5c,color:#fff
+    class SPA front
+    class SEC,CTRL,UC,JWT,HASH,REPO back
+    class COOKIE,DB data
+```
+
+### Por qué está montado así
+
+**Dos despliegues, no uno.** La SPA es estática y se sirve desde un CDN o un
+nginx; la API es un proceso Java. Escalan y se despliegan por separado. En
+desarrollo, el proxy de Vite redirige `/api` al backend, así que el navegador ve
+un único origen y no hace falta configurar CORS.
+
+**Dos credenciales con responsabilidades distintas.** El access token es un JWT
+de 15 minutos que vive **solo en memoria** de la SPA; el refresh token es un
+valor opaco de 30 días en una cookie `httpOnly` que JavaScript no puede leer.
+Si el access token se guardase en `localStorage`, un XSS lo robaría y todo el
+diseño perdería el sentido.
+
+**El backend no guarda estado de sesión en memoria.** El bloqueo de cuentas y
+los refresh tokens viven en PostgreSQL, así que se pueden levantar varias
+instancias detrás de un balanceador sin sesiones pegajosas, y un reinicio no
+borra un bloqueo en curso.
+
+**Nada bloqueante en el hilo de eventos.** Es la regla que impone WebFlux.
+BCrypt bloquea unos 100 ms, así que va envuelto en `Schedulers.boundedElastic()`
+— el error más común al mezclar Spring Security con WebFlux.
+
+> **Estado real:** hoy solo existen la SPA y la API, comunicadas por
+> `/api/v1/status`. Los componentes de autenticación y PostgreSQL están
+> especificados pero **sin implementar**; llegan con
+> [`specs/login.md`](specs/login.md).
+
+Los diagramas de secuencia del login y de la renovación de sesión están en
+[`specs/arquitectura.md`](specs/arquitectura.md).
+
 ## Estructura: tres repositorios independientes
 
 Este repositorio contiene **solo la documentación**. El frontend y el backend
