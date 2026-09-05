@@ -1,0 +1,562 @@
+openapi: 3.1.0
+
+info:
+  title: gestor-accesos — API de identidad
+  version: 1.0.0
+  description: |
+    Módulo de seguridad y autenticación del marketplace. Es el proveedor de
+    identidad del que dependen los otros seis módulos, que **no pueden acceder a
+    su base de datos**: toda relación pasa por esta API.
+
+    La fuente de verdad es el repositorio de specs. Este documento se escribe a
+    mano mientras no exista la implementación; después se genera desde el código
+    para que no se desincronice.
+
+    - Contrato y convenciones: `specs/api-contract.md`
+    - Integración entre módulos: `specs/integracion.md`
+    - Registro y login: `specs/registro.md`, `specs/login.md`
+
+    ## Cómo integrarse
+
+    1. **Valida el token en local** con la clave pública de
+       `/.well-known/jwks.json`. Es el caso normal y no requiere llamarnos.
+    2. **Pide tu token de servicio** en `/auth/token` con las credenciales de tu
+       módulo, y úsalo solo para lo que el token de usuario no lleva.
+    3. Un token de acceso vive 15 minutos y sigue siendo válido aunque el usuario
+       haya sido desactivado. Antes de una operación sensible, usa
+       `/auth/introspect`.
+  license:
+    name: Uso académico — Taller de Construcción de Software Web, UNMSM 2026-II
+  contact:
+    name: Equipo gestor-accesos
+    url: https://github.com/Sergio-Osorio09/gestor-accesos
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Desarrollo local
+  - url: http://localhost:4010
+    description: Entorno simulado (Prism sobre este mismo documento)
+
+tags:
+  - name: Integración
+    description: Endpoints que consumen los otros módulos del marketplace
+  - name: Autenticación
+    description: Login y sesiones de la SPA propia
+  - name: Registro
+    description: Alta de cuentas y verificación de email
+
+paths:
+  /.well-known/jwks.json:
+    get:
+      tags: [Integración]
+      operationId: getJwks
+      summary: Clave pública de verificación de firma
+      description: |
+        Cachéalo. Un consumidor que lo descargue en cada validación anula la
+        ventaja de validar en local y nos convierte en su punto único de fallo.
+
+        Durante una rotación se publican dos claves y la anterior se mantiene al
+        menos 24 h; el `kid` de la cabecera del token dice cuál usar.
+      security: []
+      responses:
+        '200':
+          description: Conjunto de claves
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [keys]
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      required: [kty, use, alg, kid, n, e]
+                      properties:
+                        kty: { type: string, examples: [RSA] }
+                        use: { type: string, examples: [sig] }
+                        alg: { type: string, examples: [RS256] }
+                        kid: { type: string, examples: ['2026-09'] }
+                        n: { type: string }
+                        e: { type: string, examples: [AQAB] }
+              examples:
+                rotacion:
+                  summary: Durante una rotación conviven dos claves
+                  value:
+                    keys:
+                      - { kty: RSA, use: sig, alg: RS256, kid: '2026-10', n: 'sXchDaQe...', e: AQAB }
+                      - { kty: RSA, use: sig, alg: RS256, kid: '2026-09', n: '0vx7agoe...', e: AQAB }
+
+  /auth/token:
+    post:
+      tags: [Integración]
+      operationId: issueServiceToken
+      summary: Emite el token de servicio de un módulo consumidor
+      description: |
+        Cada módulo tiene su propio `client_id` y `client_secret`, para que la
+        auditoría diga qué módulo consultó qué dato y para poder revocar uno sin
+        afectar a los demás.
+
+        Los `scopes` devueltos son los concedidos a ese cliente, aunque haya
+        pedido más.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type, client_id, client_secret]
+              properties:
+                grant_type: { type: string, enum: [client_credentials] }
+                client_id: { type: string, examples: [dispatch-module] }
+                client_secret: { type: string, format: password }
+      responses:
+        '200':
+          description: Token de servicio emitido
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accessToken, tokenType, expiresIn, scopes]
+                properties:
+                  accessToken: { type: string }
+                  tokenType: { type: string, examples: [Bearer] }
+                  expiresIn: { type: integer, examples: [3600] }
+                  scopes:
+                    type: array
+                    items: { type: string }
+              examples:
+                despacho:
+                  value:
+                    accessToken: eyJhbGciOiJSUzI1NiIsImtpZCI6IjIwMjYtMDkifQ.eyJzdWIiOiJkaXNwYXRjaC1tb2R1bGUifQ.sig
+                    tokenType: Bearer
+                    expiresIn: 3600
+                    scopes: [users:read, addresses:read]
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401':
+          description: Credenciales de cliente incorrectas
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              examples:
+                invalidClient:
+                  value:
+                    type: https://gestor-accesos/errors/invalid-client
+                    title: Cliente no válido
+                    status: 401
+                    detail: Las credenciales del cliente no son correctas.
+                    code: INVALID_CLIENT
+
+  /auth/introspect:
+    post:
+      tags: [Integración]
+      operationId: introspectToken
+      summary: Estado actual de un token de usuario
+      description: |
+        Úsalo **solo antes de operaciones sensibles** —anular, reembolsar,
+        cambiar precios—, no en cada petición.
+
+        Devuelve los roles y permisos vigentes ahora, no los que llevaba el
+        token. Un token mal firmado y uno de un usuario desactivado devuelven los
+        dos `200` con `active: false`: la introspección no falla, informa.
+      security:
+        - servicio: [tokens:introspect]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200':
+          description: Resultado de la introspección
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/IntrospectionActive'
+                  - $ref: '#/components/schemas/IntrospectionInactive'
+              examples:
+                activo:
+                  summary: Token utilizable
+                  value:
+                    active: true
+                    sub: 9f1c2f4e-3a7b-4c8d-9e0f-1a2b3c4d5e6f
+                    email: ada@example.com
+                    roles: [BUYER]
+                    permissions: []
+                    expiresAt: '2026-09-05T14:45:00Z'
+                usuarioDesactivado:
+                  summary: Firma válida, pero el usuario fue desactivado
+                  value: { active: false, reason: USER_INACTIVE }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/InsufficientScope' }
+
+  /users/{id}:
+    get:
+      tags: [Integración]
+      operationId: getUser
+      summary: Datos básicos de un usuario
+      description: |
+        Nunca incluye el hash de la contraseña. El número de documento solo llega
+        en claro con el scope `users:read:document`; sin él, enmascarado a los
+        últimos tres dígitos.
+      security:
+        - servicio: [users:read]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Usuario encontrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+              examples:
+                ada:
+                  value:
+                    id: 9f1c2f4e-3a7b-4c8d-9e0f-1a2b3c4d5e6f
+                    displayName: Ada Lovelace
+                    email: ada@example.com
+                    status: ACTIVE
+                    emailVerified: true
+                    roles: [BUYER]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/InsufficientScope' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /users/batch:
+    post:
+      tags: [Integración]
+      operationId: getUsersBatch
+      summary: Datos básicos de hasta 100 usuarios
+      description: |
+        **Los identificadores no hallados no fallan la petición:** van a
+        `notFound` y el resto se devuelve. Los duplicados se colapsan.
+
+        Un UUID malformado sí es un `400`; uno bien formado que no existe va a
+        `notFound`.
+      security:
+        - servicio: [users:read]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Resultado parcial o completo
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users, notFound]
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: '#/components/schemas/User' }
+                  notFound:
+                    type: array
+                    items: { type: string, format: uuid }
+              examples:
+                parcial:
+                  summary: 3 pedidos, 1 encontrado y 2 no
+                  value:
+                    users:
+                      - id: 9f1c2f4e-3a7b-4c8d-9e0f-1a2b3c4d5e6f
+                        displayName: Ada Lovelace
+                        email: ada@example.com
+                        status: ACTIVE
+                        emailVerified: true
+                        roles: [BUYER]
+                    notFound:
+                      - 3b2d1a0c-1111-4222-8333-444455556666
+                      - 7e5f4c3b-2222-4333-8444-555566667777
+        '400':
+          description: Cuerpo inválido o lote demasiado grande
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+              examples:
+                loteGrande:
+                  value:
+                    type: https://gestor-accesos/errors/batch-too-large
+                    title: Lote demasiado grande
+                    status: 400
+                    detail: La consulta por lote acepta como máximo 100 identificadores.
+                    code: BATCH_TOO_LARGE
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/InsufficientScope' }
+
+  /users/{id}/addresses:
+    get:
+      tags: [Integración]
+      operationId: getUserAddresses
+      summary: Direcciones de entrega del cliente
+      description: |
+        Sin documento ni fecha de nacimiento: no hacen falta para entregar un
+        paquete.
+
+        La forma exacta del cuerpo depende de la spec de atributos de usuario,
+        todavía sin escribir. Lo que ya es contrato son la ruta, el scope y los
+        códigos de error.
+      security:
+        - servicio: [addresses:read]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Direcciones del cliente
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/InsufficientScope' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /roles:
+    get:
+      tags: [Integración]
+      operationId: listRoles
+      summary: Catálogo de roles y sus permisos
+      description: |
+        Permite a un consumidor resolver qué significa un rol sin codificarlo a
+        mano. El catálogo de permisos es su propia spec, todavía sin escribir.
+      security:
+        - servicio: [roles:read]
+      responses:
+        '200':
+          description: Catálogo
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/InsufficientScope' }
+
+  /auth/login:
+    post:
+      tags: [Autenticación]
+      operationId: login
+      summary: Autentica email y contraseña
+      description: |
+        Lo usa la SPA de este módulo. Los equipos consumidores lo necesitan solo
+        para obtener un token de usuario de prueba contra el entorno simulado.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+                password: { type: string }
+      responses:
+        '200':
+          description: Sesión iniciada
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+              description: 'refresh_token; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accessToken, tokenType, expiresIn, user]
+                properties:
+                  accessToken: { type: string }
+                  tokenType: { type: string, examples: [Bearer] }
+                  expiresIn: { type: integer, examples: [900] }
+                  user: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401':
+          description: Credenciales inválidas. Idéntica si el email no existe
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /auth/register:
+    post:
+      tags: [Registro]
+      operationId: register
+      summary: Da de alta una cuenta
+      description: |
+        Responde `202` **exista o no el email**, a propósito: distinguirlo sería
+        una vía de enumeración. Ver `specs/registro.md`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, displayName]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+                password: { type: string, minLength: 12 }
+                displayName: { type: string, minLength: 2, maxLength: 100 }
+      responses:
+        '202':
+          description: Petición aceptada
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message: { type: string }
+              examples:
+                generico:
+                  value:
+                    message: Si la dirección es válida, recibirás un correo para confirmar tu cuenta.
+        '400': { $ref: '#/components/responses/ValidationError' }
+
+components:
+  securitySchemes:
+    servicio:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Token de servicio obtenido en `/auth/token`. Lleva `type: "service"` y el
+        `client_id` en `sub`. **No es un token de usuario:** no sirve para
+        endpoints que actúan en nombre de una persona ni hereda los permisos del
+        usuario que introspecciona.
+
+  schemas:
+    User:
+      type: object
+      required: [id, displayName, email, status, emailVerified, roles]
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        email: { type: string, format: email }
+        status: { type: string, enum: [ACTIVE, DISABLED] }
+        emailVerified: { type: boolean }
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [BUYER, SELLER, SALES_ADMIN, DISPATCH_MANAGER, COMMERCIAL_MANAGER, SYSTEM_ADMIN]
+
+    IntrospectionActive:
+      type: object
+      required: [active, sub, email, roles, permissions, expiresAt]
+      properties:
+        active: { const: true }
+        sub: { type: string, format: uuid }
+        email: { type: string, format: email }
+        roles: { type: array, items: { type: string } }
+        permissions:
+          type: array
+          items: { type: string }
+          description: Unión de los permisos de los roles, sin duplicados. Vacío hasta que exista el catálogo de permisos.
+        expiresAt: { type: string, format: date-time }
+
+    IntrospectionInactive:
+      type: object
+      required: [active, reason]
+      properties:
+        active: { const: false }
+        reason:
+          type: string
+          enum: [USER_INACTIVE, USER_LOCKED, TOKEN_EXPIRED, TOKEN_INVALID]
+
+    Problem:
+      type: object
+      description: RFC 7807 con la extensión `code`. **Enruta por `code`, nunca por `detail`.**
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }
+
+  responses:
+    ValidationError:
+      description: El cuerpo no cumple las reglas de los campos
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          examples:
+            validacion:
+              value:
+                type: https://gestor-accesos/errors/validation-error
+                title: Datos inválidos
+                status: 400
+                code: VALIDATION_ERROR
+                errors:
+                  - { field: email, message: Debe ser un email válido. }
+
+    Unauthorized:
+      description: |
+        Token de servicio ausente o inválido. **Idéntico exista o no el usuario
+        consultado:** un 401 no puede convertirse en una forma de averiguar qué
+        identificadores existen.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          examples:
+            sinToken:
+              value:
+                type: https://gestor-accesos/errors/token-invalid
+                title: Token inválido
+                status: 401
+                detail: Falta la credencial o no es válida.
+                code: TOKEN_INVALID
+
+    InsufficientScope:
+      description: |
+        Token de servicio válido, pero sin el scope que el endpoint exige. No
+        revela cuál haría falta.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          examples:
+            sinScope:
+              value:
+                type: https://gestor-accesos/errors/insufficient-scope
+                title: Permiso insuficiente
+                status: 403
+                detail: Este cliente no tiene permiso para esta operación.
+                code: INSUFFICIENT_SCOPE
+
+    NotFound:
+      description: |
+        El recurso no existe. Solo se llega aquí con un token de servicio válido
+        y el scope correcto.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

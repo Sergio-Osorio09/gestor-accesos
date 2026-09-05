@@ -22,6 +22,12 @@ primero se escribe la especificación, después el código.
 | `specs/arquitectura.md` | Diagrama de componentes y flujo de comunicación.       |
 | `specs/login.md`        | Spec de la primera funcionalidad.                      |
 | `specs/login.plan.md`   | Plan de implementación del login.                      |
+| `specs/registro.md`     | Spec del alta de cuentas y verificación de email.      |
+| `specs/registro.plan.md`| Plan de implementación del registro.                   |
+| `specs/integracion.md`  | Spec de la API que consumen los otros seis módulos.    |
+| `specs/integracion.plan.md` | Plan de implementación de la integración.          |
+| `specs/kit-integracion.md`  | Guía práctica para los equipos consumidores.       |
+| `specs/openapi.yaml`    | Contrato publicado a los demás equipos.                |
 | `frontend/`             | SPA en React + TypeScript. **Repositorio Git aparte.** |
 | `backend/`              | API en Spring WebFlux. **Repositorio Git aparte.**     |
 | `AGENTS.md`             | Este documento.                                        |

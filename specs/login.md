@@ -202,6 +202,24 @@ Se comprueba después de validar la contraseña (ver 4.7). El `code`
 ofrecer "reenviar el correo de verificación" — aunque **ese reenvío no se
 implementa aquí** (bloque 5).
 
+### 4.10 El token que emite este login sale del módulo
+
+El access token del escenario 1 no lo lee solo nuestra SPA: viaja dentro de las
+peticiones que el usuario hace a los otros seis módulos del marketplace, que lo
+verifican por su cuenta con la clave pública del JWKS.
+
+Dos consecuencias para esta funcionalidad:
+
+- **Se firma con RS256**, no con HS256, y sus claims —incluidos `permissions`,
+  `type`, `iss` y `aud`— son contrato. Están fijados en
+  [`api-contract.md` §1.4](api-contract.md) y **no pueden cambiarse
+  unilateralmente**: hacerlo rompería a seis equipos a la vez.
+- **Cerrar sesión no invalida el access token en los otros módulos.** El logout
+  del escenario 8 revoca el refresh token, pero el access token sigue siendo
+  criptográficamente válido hasta su `exp`. Es el desfase de 15 minutos que
+  documenta [`integracion.md` §5.1](integracion.md), y quien no lo tolere usa la
+  introspección.
+
 ## 5. Fuera de alcance
 
 Nada de lo siguiente se implementa en esta funcionalidad. Si hace falta, se

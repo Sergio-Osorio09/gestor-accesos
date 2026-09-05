@@ -37,6 +37,7 @@ Especificados hasta ahora:
 | --- | --- |
 | [registro.md](registro.md) | Alta de cuentas y verificación de email |
 | [login.md](login.md) | Autenticación, renovación y cierre de sesión |
+| [integracion.md](integracion.md) | API de identidad para los demás módulos del marketplace |
 
 El orden de implementación empieza por el registro: `login.md` asume cuentas que
 ya existen, así que sin alta no hay nadie que pueda iniciar sesión.
@@ -54,6 +55,9 @@ Lo siguiente **no** es responsabilidad de este módulo, aunque se relacione con
   estado de la cuenta y los roles.
 - **La aplicación de los permisos en cada endpoint de negocio.** Este módulo
   emite los roles; cada módulo decide qué exige.
+- **Los eventos asíncronos entre módulos.** Publicar en cola las bajas, los
+  bloqueos y los cambios de rol es la vía 3 de [integracion.md](integracion.md),
+  y se especifica aparte.
 - **Identidades federadas** (Google, Apple, GitHub) y **SSO corporativo**.
 - **Segundo factor de autenticación (MFA).**
 - **Gestión de sesiones de administración interna** y herramientas de back
@@ -69,8 +73,31 @@ Lo siguiente **no** es responsabilidad de este módulo, aunque se relacione con
 | **Comprador** (`BUYER`) | Usuario autenticado que compra. Es el rol por defecto al registrarse. | Inicia y cierra sesión, renueva su sesión, cambia su contraseña. |
 | **Vendedor** (`SELLER`) | Usuario autenticado con permiso para publicar productos. | Lo mismo que el comprador; su rol se lo dan otros procesos. |
 | **Administrador** (`ADMIN`) | Personal de la plataforma. | Desactiva y reactiva cuentas, desbloquea cuentas, consulta el registro de accesos. |
-| **Servicios internos** | Otros módulos del marketplace. | Validan el token de una petición y leen la identidad y los roles que contiene. |
+| **Módulos consumidores** | Los otros seis microservicios del marketplace. | Verifican el token de una petición con nuestra clave pública, y nos consultan por API lo que el token no lleva. **No pueden tocar nuestra base de datos.** Ver [integracion.md](integracion.md). |
 | **Proveedor de correo** | Servicio externo de envío de emails. | Entrega los correos de verificación y de restablecimiento de contraseña. |
+
+### Catálogo de roles
+
+La tabla de actores nombra los tres roles que intervienen en las funcionalidades
+ya especificadas. **No son todos los del marketplace:** el plan del curso define
+seis, uno por perfil de módulo.
+
+| Rol | Perfil |
+| --- | --- |
+| `BUYER` | Cliente que compra |
+| `SELLER` | Vendedor que publica productos |
+| `SALES_ADMIN` | Administra pedidos: anulaciones y reembolsos |
+| `DISPATCH_MANAGER` | Administra rutas y entregas |
+| `COMMERCIAL_MANAGER` | Administra catálogo y precios |
+| `SYSTEM_ADMIN` | Personal de la plataforma |
+
+**Estos códigos viajan dentro del token que leen los otros seis equipos**, y el
+plan del curso los define en español (`CLIENTE`, `VENDEDOR`, …). La divergencia
+está registrada en [`integracion.md` §5.10](integracion.md) y se acuerda en la
+sincronización entre módulos **antes** de publicar el contrato.
+
+El catálogo de permisos asociado a cada rol es su propia spec, todavía sin
+escribir.
 
 ### Estados de una cuenta
 

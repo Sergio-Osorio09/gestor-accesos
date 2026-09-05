@@ -37,7 +37,7 @@ Spring Boot 4.1 + WebFlux, Java 21, Maven. Generado desde `start.spring.io`.
 | `spring-boot-starter-data-r2dbc` + `r2dbc-postgresql` | Acceso a datos no bloqueante, coherente con WebFlux |
 | `spring-boot-starter-validation` | Validación declarativa de los DTO de entrada |
 | `lombok` | Menos repetición en entidades y DTO |
-| `io.jsonwebtoken:jjwt` 0.12.x | Firma y verificación de los JWT (HS256) |
+| `com.nimbusds:nimbus-jose-jwt` | Firma y verificación de los JWT (**RS256**) y publicación del JWKS |
 | `flyway-core` + `postgresql` (JDBC) | Migraciones versionadas |
 
 **Sobre Flyway y JDBC:** Flyway no habla R2DBC, así que el driver JDBC entra
@@ -46,8 +46,14 @@ aplicación usa **únicamente** R2DBC; ninguna petición HTTP toca JDBC. Es el
 precio de tener migraciones versionadas en un equipo de 6 personas, y se paga a
 conciencia.
 
-El secreto de firma se lee de la variable de entorno `JWT_SECRET` (mínimo 256
-bits). No hay valor por defecto: si falta, la aplicación no arranca.
+El par de claves RSA se lee de las variables de entorno `JWT_PRIVATE_KEY`,
+`JWT_PUBLIC_KEY` y `JWT_KEY_ID`. No hay valor por defecto: si falta la clave
+privada, la aplicación no arranca.
+
+**RS256 y no HS256**, porque el token que emite este login lo verifican los otros
+seis módulos del marketplace con la clave pública del JWKS. Con HS256 habría que
+repartirles la clave de firma, y con ella podrían emitir tokens de administrador.
+Ver [`stack.md` §4](stack.md) e [`integracion.md`](integracion.md).
 
 ## 2. Modelo de datos
 

@@ -92,12 +92,35 @@ personas tocando el esquema.
 | Pieza | Elección |
 | --- | --- |
 | Hash de contraseñas | BCrypt, coste 12 |
-| Access token | JWT firmado con HS256, 15 min |
+| Access token | JWT firmado con **RS256**, 15 min |
 | Refresh token | Valor opaco de 256 bits en cookie `httpOnly`, 30 días |
-| Librería JWT | `io.jsonwebtoken:jjwt` 0.12.x |
+| Librería JWT | `com.nimbusds:nimbus-jose-jwt` |
+| Publicación de la clave | Endpoint JWKS, `GET /api/v1/.well-known/jwks.json` |
+
+**RS256 y no HS256.** Este módulo no emite tokens solo para su propia SPA: los
+emite para los otros seis módulos del marketplace, que tienen que verificarlos.
+Con HS256 la única forma de que lo hicieran sería repartirles la clave de firma,
+y una clave que verifica también firma: cualquiera de los seis equipos podría
+emitir un token de administrador. Con RS256 reciben la clave **pública** por el
+JWKS y no pueden firmar nada.
+
+**Nimbus en vez de `jjwt`.** Nimbus es la librería que ya usa Spring Security
+por debajo para JWT y JWKS, así que publicar el JWKS y rotar claves sale de la
+caja en vez de escribirse a mano.
+
+El par de claves RSA (2048 bits) **no vive en el repositorio**. Se inyecta por
+variables de entorno (`JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `JWT_KEY_ID`) y en
+producción sale del gestor de secretos del proveedor. Si falta la clave privada,
+la aplicación no arranca: un módulo de identidad que arranque sin poder firmar
+es peor que uno que no arranque.
+
+La rotación mantiene la clave anterior publicada en el JWKS al menos 24 h, para
+que ningún token en circulación deje de validarse. El detalle está en
+[integracion.md §5.2](integracion.md).
 
 El detalle del modelo de sesión está en
-[api-contract.md](api-contract.md#14-autenticación).
+[api-contract.md](api-contract.md#14-autenticación), y el de la integración con
+los demás módulos en [integracion.md](integracion.md).
 
 ## 5. Pruebas
 

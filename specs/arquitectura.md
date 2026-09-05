@@ -16,7 +16,7 @@ graph TB
         API["AuthController<br/>/api/v1/auth/*"]
         SEC["SecurityWebFilterChain<br/>Valida el Bearer token"]
         UC["Casos de uso<br/>Login · Refresh · Logout"]
-        JWT["JwtTokenService<br/>Firma y verifica HS256"]
+        JWT["JwtTokenService<br/>Firma RS256 · publica JWKS"]
         BCRYPT["PasswordHasher<br/>BCrypt en boundedElastic"]
         REPO["Repositorios R2DBC<br/>No bloqueantes"]
     end
@@ -105,7 +105,74 @@ sequenceDiagram
     end
 ```
 
-## 4. Decisiones estructurales
+## 4. Integración con los demás módulos del marketplace
+
+La vista de los apartados anteriores es la del módulo hablando con su propia
+SPA. Pero el token que emitimos lo consumen otros seis microservicios, que **no
+pueden tocar nuestra base de datos**. Así se relacionan con nosotros:
+
+```mermaid
+graph LR
+    U["👤 Usuario<br/>con Bearer token"]
+
+    subgraph consumidores["Los otros 6 módulos del marketplace"]
+        PROD["Productos<br/>y ofertas"]
+        VENTAS["Ventas<br/>y postventa"]
+        DESP["Despacho<br/>y entrega"]
+        OTROS["Chatbot · Retail<br/>· Administración"]
+    end
+
+    subgraph nosotros["🔐 gestor-accesos"]
+        JWKS["JWKS<br/>/.well-known/jwks.json<br/>Clave PÚBLICA"]
+        INTRO["/auth/introspect<br/>/users · /users/batch<br/>Exigen token de servicio"]
+        DB[("PostgreSQL<br/>Solo nosotros<br/>la tocamos")]
+    end
+
+    U --> PROD
+    U --> VENTAS
+    U --> DESP
+    U --> OTROS
+
+    PROD -.->|"① descarga y cachea<br/>verifica en local"| JWKS
+    VENTAS -.-> JWKS
+    DESP -.-> JWKS
+    OTROS -.-> JWKS
+
+    VENTAS ==>|"② solo antes de<br/>anular o reembolsar"| INTRO
+    DESP ==>|"② dirección<br/>de entrega"| INTRO
+
+    INTRO --> DB
+    JWKS --> DB
+
+    classDef ext fill:#f59e0b,stroke:#b45309,color:#000
+    classDef mine fill:#6db33f,stroke:#3d6b21,color:#fff
+    classDef data fill:#336791,stroke:#1a3d5c,color:#fff
+    class PROD,VENTAS,DESP,OTROS,U ext
+    class JWKS,INTRO mine
+    class DB data
+```
+
+**La línea punteada ① es el caso normal y no nos llama.** El módulo descarga la
+clave pública una vez, la cachea y verifica cada token por su cuenta. Si nuestra
+API se cae, los seis módulos siguen autenticando a sus usuarios.
+
+**La línea gruesa ② es la excepción.** Solo antes de operaciones sensibles, o
+para datos que el token no lleva. Un módulo que la use en cada petición nos
+convierte en su punto único de fallo y anula la ventaja de ①.
+
+El precio de ① está registrado: un token sigue siendo válido hasta su `exp`
+aunque el usuario haya sido desactivado. Por eso dura 15 minutos y por eso
+existe ②. El detalle completo está en [`integracion.md`](integracion.md).
+
+### Por qué la clave es asimétrica
+
+Si firmáramos con HS256, la única forma de que los seis módulos verificaran sería
+darles la clave de firma. Y una clave que verifica también firma: cualquiera de
+los seis equipos —o cualquiera que comprometiera a uno de ellos— podría emitir
+un token de administrador. Con RS256 reciben la clave **pública**: pueden
+comprobar que un token es nuestro, y no pueden fabricar ninguno.
+
+## 5. Decisiones estructurales
 
 **Dos despliegues, no uno.** La SPA es estática (se sirve desde un CDN o un
 nginx); la API es un proceso Java. Escalan por separado y se despliegan por

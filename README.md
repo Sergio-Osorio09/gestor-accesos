@@ -25,7 +25,7 @@ graph TB
         SEC["SecurityWebFilterChain<br/>Valida la cabecera Bearer"]
         CTRL["AuthController<br/>/api/v1/auth/*"]
         UC["Casos de uso<br/>Login · Refresh · Logout"]
-        JWT["JwtTokenService<br/>Firma HS256 · 15 min"]
+        JWT["JwtTokenService<br/>Firma RS256 · 15 min"]
         HASH["PasswordHasher<br/>BCrypt en boundedElastic"]
         REPO["Repositorios R2DBC<br/>No bloqueantes"]
     end
@@ -213,6 +213,10 @@ desarrollo.
   completar de verdad.
 - ⬜ Login: especificado en [`specs/login.md`](specs/login.md) y planificado en
   [`specs/login.plan.md`](specs/login.plan.md), **sin implementar**.
+- 🔶 API de identidad para los demás módulos
+  ([`specs/integracion.md`](specs/integracion.md)): **el contrato está publicado**
+  en [`specs/openapi.yaml`](specs/openapi.yaml) y hay un entorno simulado
+  funcionando; la implementación no ha empezado.
 
 El registro va primero: `login.md` asume cuentas que ya existen, así que sin
 alta no hay nadie que pueda iniciar sesión.
@@ -222,6 +226,38 @@ Lo siguiente son los pasos 1-7 de
 contraseñas, outbox de correo y los tres endpoints. Hacen falta **JDK 21** (no
 solo el JRE) y **Docker**, para Testcontainers y Mailpit.
 
+## Integración con los demás módulos del marketplace
+
+Este módulo es el proveedor de identidad de los otros seis, y **ninguno puede
+acceder a su base de datos**: toda relación pasa por API. Los otros equipos se
+relacionan con nosotros de tres formas:
+
+| Vía | Cuándo | Coste |
+| --- | --- | --- |
+| **Validación local del token** con la clave pública del JWKS | En cada petición ordinaria. Es el caso normal | Ninguna llamada de red. No detecta cambios de estado hasta que el token vence |
+| **Llamada síncrona** a introspección o consulta de usuarios | Antes de anular, reembolsar o cambiar precios | Una llamada de red y una dependencia de nuestra disponibilidad |
+| **Eventos asíncronos** | Para enterarse de bajas y bloqueos sin preguntar | **Todavía no existen**: se especifican aparte |
+
+El token se firma con **RS256**, no con HS256, precisamente para esto: los demás
+módulos reciben la clave **pública** y pueden verificar sin poder firmar. Con una
+clave simétrica habría que repartirles la clave de firma, y cualquiera de los seis
+equipos podría emitir un token de administrador.
+
+Si vienes de otro equipo, lee [`specs/kit-integracion.md`](specs/kit-integracion.md):
+es la guía práctica, con ejemplos ejecutables.
+
+### Programa contra nosotros antes de que existamos
+
+El contrato está congelado antes que el código. Levanta el entorno simulado:
+
+```bash
+npx @stoplight/prism-cli mock specs/openapi.yaml -p 4010
+curl http://localhost:4010/.well-known/jwks.json
+```
+
+Responde con los ejemplos reales del contrato, incluidos los caminos de error.
+Cuando la implementación esté lista, solo cambias la URL base.
+
 ## Documentación
 
 Orden de lectura recomendado:
@@ -230,6 +266,9 @@ Orden de lectura recomendado:
 2. [`specs/stack.md`](specs/stack.md) — con qué herramientas y por qué.
 3. [`specs/api-contract.md`](specs/api-contract.md) — cómo hablan las dos apps.
 4. [`specs/arquitectura.md`](specs/arquitectura.md) — diagramas de componentes.
+5. [`specs/integracion.md`](specs/integracion.md) — cómo hablan los otros seis
+   módulos con este. Si vienes de otro equipo, empieza por
+   [`specs/kit-integracion.md`](specs/kit-integracion.md).
 5. [`specs/registro.md`](specs/registro.md) — alta de cuentas y verificación de
    email, la funcionalidad en curso.
 6. [`specs/login.md`](specs/login.md) — autenticación y gestión de sesiones.
