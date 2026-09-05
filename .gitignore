@@ -1,0 +1,37 @@
+# ---------------------------------------------------------------
+# Repositorios independientes: NO deben registrarse en el repo raíz.
+# Cada uno tiene su propio historial de Git y su propio .gitignore.
+# ---------------------------------------------------------------
+frontend/
+backend/
+
+# Sistema operativo
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Editores e IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.iml
+.project
+.classpath
+.settings/
+
+# Logs y temporales
+*.log
+tmp/
+temp/
+
+# Variables de entorno
+.env
+.env.*
+!.env.example
