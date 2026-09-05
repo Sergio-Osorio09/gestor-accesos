@@ -198,11 +198,17 @@ desarrollo.
 Esto es **andamiaje**: los dos proyectos arrancan y se comunican, pero todavía
 no hay lógica de negocio.
 
-- ✅ Specs escritas: visión, stack, contrato de API, arquitectura y la primera
-  funcionalidad (login).
+- ✅ Specs escritas: visión, stack, contrato de API, arquitectura y dos
+  funcionalidades (registro y login).
 - ✅ Frontend y backend arrancan y se comunican vía `/api/v1/status`.
+- ⬜ Registro y verificación de email: especificado en
+  [`specs/registro.md`](specs/registro.md) y planificado en
+  [`specs/registro.plan.md`](specs/registro.plan.md), **sin implementar**.
 - ⬜ Login: especificado en [`specs/login.md`](specs/login.md) y planificado en
   [`specs/login.plan.md`](specs/login.plan.md), **sin implementar**.
+
+El registro va primero: `login.md` asume cuentas que ya existen, así que sin
+alta no hay nadie que pueda iniciar sesión.
 
 ## Documentación
 
@@ -212,7 +218,9 @@ Orden de lectura recomendado:
 2. [`specs/stack.md`](specs/stack.md) — con qué herramientas y por qué.
 3. [`specs/api-contract.md`](specs/api-contract.md) — cómo hablan las dos apps.
 4. [`specs/arquitectura.md`](specs/arquitectura.md) — diagramas de componentes.
-5. [`specs/login.md`](specs/login.md) — la funcionalidad en curso.
+5. [`specs/registro.md`](specs/registro.md) — alta de cuentas y verificación de
+   email, la funcionalidad en curso.
+6. [`specs/login.md`](specs/login.md) — autenticación y gestión de sesiones.
 
 Antes de tocar código, lee [`AGENTS.md`](AGENTS.md): convenciones, reglas de
 alcance y cómo trabajar con los tres repositorios.
